@@ -1,34 +1,31 @@
 #!/usr/bin/env python3
-from datetime import datetime, timedelta
-from os import path, makedirs, getcwd, remove
-import threading
+import threading, requests
 import pandas as pd
-import requests
+from datetime import datetime, timedelta
+from os import path, makedirs, remove
 
 # Sucuri Info
 SUCURI_API_URL = "https://waf.sucuri.net/api?v2"
-SUCURI_SITES = []
-
-#Date generator function
-def daterange(start_date, end_date):
-    for n in range(int ((end_date - start_date).days)):
-        yield start_date + timedelta(n)
+SUCURI_API_KEY = "..."
+SUCURI_SITES = [
+    ...
+]
 
 #Sucuri to Disk
-def sucuri_to_disk(domain, key, secret, added_time):
+def sucuri_to_disk(domain, key, secret, date):
     try:
         makedirs('/'.join([getcwd(), "sucuri", domain]))
     except FileExistsError:
         pass
-    for single_date in daterange(datetime.strptime(added_time, "%Y-%m-%d"), datetime.now()):
+    finally:
         SUCURI_FILE = '-'.join([
             '/'.join([
-                getcwd(), 
+                getcwd(),
                 "sucuri",
                 domain,
                 domain
             ]),
-            single_date.strftime("%Y-%m-%d"),
+            date.strftime("%Y-%m-%d"),
             '1000'
         ]) + '.csv'
         if not path.isfile(SUCURI_FILE):
@@ -40,7 +37,7 @@ def sucuri_to_disk(domain, key, secret, added_time):
                             "k": key,
                             "s": secret,
                             "a": "audit_trails",
-                            "date": single_date.strftime("%Y-%m-%d"),
+                            "date": date.strftime("%Y-%m-%d"),
                             "format": "csv",
                             "limit": 1000
                         }
@@ -57,16 +54,13 @@ def sucuri_to_disk(domain, key, secret, added_time):
             except FileNotFoundError:
                 pass
             else:
-                df["request_date"] = single_date.strftime("%d-%b-%Y")
+                df["request_date"] = date.strftime("%d-%b-%Y")
                 df["request_time"] = datetime.now().strftime("%H:%M:%S")
-                df["site"] = domain
                 try:
                     df = df.drop(columns="geo_location")
                 except KeyError:
-                    try:
-                        remove(SUCURI_FILE)
-                    except FileNotFoundError:
-                        pass
+                    df = df[df.is_usable != 0]
+                    df.to_csv(SUCURI_FILE, index=False)
                 else:
                     df = df[df.is_usable != 0]
                     df.to_csv(SUCURI_FILE, index=False)
@@ -76,11 +70,32 @@ if __name__ == "__main__":
         makedirs('/'.join([getcwd(), "sucuri"]))
     except FileExistsError:
         pass
-    threads = list()
-    for i in SUCURI_SITES:
-        if i["enabled"]:
-            x = threading.Thread(target=sucuri_to_disk, args=(i["domain"],i["key"],i["secret"],i["added_time"]), daemon=True)
-            threads.append(x)
-            x.start()
-    for index, thread in enumerate(threads):
-        thread.join()
+    finally:
+        yesterday = datetime.now() - timedelta(1)
+        threads = list()
+        for i in SUCURI_SITES:
+            data = requests.post(
+                SUCURI_API_URL,
+                data={
+                    "k": SUCURI_API_KEY,
+                    "s": i['secret'],
+                    "a": "show_settings"
+                }
+            ).json()
+            i['enabled'] = True if data['output']['proxy_active'] == 1 else False
+            i['domain'] = data['output']['domain']
+            i['key'] = SUCURI_API_KEY
+            if i["enabled"]:
+                x = threading.Thread(
+                    target=sucuri_to_disk,
+                    args=(
+                        i["domain"],
+                        i["key"],
+                        i["secret"],
+                        yesterday
+                    ), daemon=True
+                )
+                threads.append(x)
+                x.start()
+        for index, thread in enumerate(threads):
+            thread.join()
