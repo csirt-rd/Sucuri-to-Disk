@@ -52,15 +52,16 @@ python3 app.py
 #### Configuración:
 
 ```python
+
+SUCURI_API_KEY = "..."
 SUCURI_SITES = [
-    ...
     {
-        "domain": "",
-        "key": "",
-        "secret": "",
-        "added_time": "",
-        "enabled": True    #Cambiar a False como sea conveniente.
+        "secret": "...",   # Añadir tantos API_SECRET como le sea necesario.
+        ...
     },
-    ...
 ]
 ```
+
+#### Referencias:
+
+https://waf.sucuri.net/?apidocs
